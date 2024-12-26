@@ -1,6 +1,8 @@
 import fs from 'fs';
 import decode from 'audio-decode';
-import { Essentia, EssentiaWASM } from 'essentia.js';
+import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
+
+const KEEP_PERCENTAGE = 0.15; // keep only 15% of audio file
 
 // Initialize Essentia
 const essentia = new Essentia(EssentiaWASM);
@@ -21,8 +23,10 @@ const modelTagOrder = {
 // Use the hosted model URL
 const modelPath = 'https://raw.githubusercontent.com/MTG/essentia.js/refs/heads/master/examples/demos/mood-classifiers/models/danceability-musicnn-msd-2/model.json';
 
+const extractor = new EssentiaModel.EssentiaTFInputExtractor(EssentiaWASM, 'musicnn', false);
+
 async function loadTensorflowWASM() {
-  const tf = await import('@tensorflow/tfjs');
+  const tf = await import('@tensorflow/tfjs-node');
   await tf.ready();
   console.info('tfjs WASM backend successfully initialized!');
   return tf;
@@ -68,11 +72,24 @@ const main = async () => {
 
     modelLoaded = await initModel(tf);
 
-    const buffer = fs.readFileSync('audio/1.mp3');
+    const buffer = fs.readFileSync('audio/3.mp3');
+
+    console.log(buffer)
 
     const audio = await decode(buffer);
 
+    // console.log(audio)
+
+
+
     const data = essentia.arrayToVector(audio._channelData[0]);
+
+    console.log(audio._channelData[0])
+
+    //let audioData2 = shortenAudio(audio, KEEP_PERCENTAGE, true); // <-- TRIMMED start/end
+
+    // console.log(audioData2)
+
 
     // Extract audio features
     const danceability = essentia.Danceability(data).danceability;
@@ -93,16 +110,61 @@ const main = async () => {
       patchSize: 187
     };
 
+    // let audioData = shortenAudio(prepocessedAudio, KEEP_PERCENTAGE, true); // <-- TRIMMED start/end
+
+
+    const features = extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
+
+    console.log(features)
+
+
+    //console.log(fakeFeatures)
+
     const fakeStart = Date.now();
-    const predictions = await model.predict(fakeFeatures, false);
+    const predictions = await model.predict(features, true);
     const summarizedPredictions = twoValuesAverage(predictions);
-    console.log('Predictions:', summarizedPredictions);
+    // console.log('Predictions:', summarizedPredictions);
+    console.log(predictions)
     console.info(`Model: Warm up inference took: ${Date.now() - fakeStart}`);
 
   } catch (err) {
     console.error('Error processing audio file:', err);
   }
 };
+
+function shortenAudio (audioIn, keepRatio=0.5, trim=false) {
+  /* 
+      keepRatio applied after discarding start and end (if trim == true)
+  */
+  if (keepRatio < 0.15) {
+      keepRatio = 0.15 // must keep at least 15% of the file
+  } else if (keepRatio > 0.66) {
+      keepRatio = 0.66 // will keep at most 2/3 of the file
+  }
+
+  if (trim) {
+      const discardSamples = Math.floor(0.1 * audioIn.length); // discard 10% on beginning and end
+      audioIn = audioIn.subarray(discardSamples, audioIn.length - discardSamples); // create new view of buffer without beginning and end
+  }
+
+  const ratioSampleLength = Math.ceil(audioIn.length * keepRatio);
+  const patchSampleLength = 187 * 256; // cut into patchSize chunks so there's no weird jumps in audio
+  const numPatchesToKeep = Math.ceil(ratioSampleLength / patchSampleLength);
+
+  // space patchesToKeep evenly
+  const skipSize = Math.floor( (audioIn.length - ratioSampleLength) / (numPatchesToKeep - 1) );
+
+  let audioOut = [];
+  let startIndex = 0;
+  for (let i = 0; i < numPatchesToKeep; i++) {
+      let endIndex = startIndex + patchSampleLength;
+      let chunk = audioIn.slice(startIndex, endIndex);
+      audioOut.push(...chunk);
+      startIndex = endIndex + skipSize; // discard even space
+  }
+
+  return Float32Array.from(audioOut);
+}
 
 // Run the main function
 main();
