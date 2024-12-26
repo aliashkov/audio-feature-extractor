@@ -2,16 +2,12 @@ import fs from 'fs';
 import decode from 'audio-decode';
 import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
 
-const KEEP_PERCENTAGE = 0.15; // Keep only 15% of audio file
-
 // Initialize Essentia
 const essentia = new Essentia(EssentiaWASM);
 
-const SAMPLE_RATE = 44100;
-const CHANNELS = 1;
-
 // Model paths
 const modelPaths = {
+  mood_dancability: 'https://raw.githubusercontent.com/MTG/essentia.js/refs/heads/master/examples/demos/mood-classifiers/models/danceability-musicnn-msd-2/model.json',
   mood_happy: 'https://raw.githubusercontent.com/MTG/essentia.js/refs/heads/master/examples/demos/mood-classifiers/models/mood_happy-musicnn-msd-2/model.json',
   mood_sad: 'https://raw.githubusercontent.com/MTG/essentia.js/refs/heads/master/examples/demos/mood-classifiers/models/mood_sad-musicnn-msd-2/model.json',
   mood_relaxed: 'https://raw.githubusercontent.com/MTG/essentia.js/refs/heads/master/examples/demos/mood-classifiers/models/mood_relaxed-musicnn-msd-2/model.json',
@@ -39,14 +35,6 @@ async function initModels(tf) {
   return models; // Return models object
 }
 
-function getZeroMatrix(x, y) {
-  let matrix = new Array(x);
-  for (let f = 0; f < x; f++) {
-    matrix[f] = new Array(y).fill(0);
-  }
-  return matrix;
-}
-
 function twoValuesAverage(arrayOfArrays) {
   let firstValues = [];
   let secondValues = [];
@@ -72,13 +60,17 @@ const main = async () => {
 
     const models = await initModels(tf); // Store models in an object
 
-    const buffer = fs.readFileSync('audio/2.mp3');
+    const buffer = fs.readFileSync('audio/5.mp3');
+
+    console.log(buffer)
+
  
     const audio = await decode(buffer);
+    
     const data = essentia.arrayToVector(audio._channelData[0]);
 
+
     // Extract audio features
-    const danceability = essentia.Danceability(data).danceability;
     const duration = essentia.Duration(data).duration;
     const energy = essentia.Energy(data).energy;
     const keyExtractor = essentia.KeyExtractor(data);
@@ -88,7 +80,7 @@ const main = async () => {
     const loudness = essentia.DynamicComplexity(data).loudness;
     const tempo = essentia.PercivalBpmEstimator(data).bpm;
 
-    console.log(`Danceability: ${danceability}, Duration: ${duration}, Energy: ${energy}, Key: ${key}, Mode: ${mode}, Loudness: ${loudness}, Tempo: ${tempo}`);
+    console.log(`Duration: ${duration}, Energy: ${energy}, Key: ${key}, Mode: ${mode}, Loudness: ${loudness}, Tempo: ${tempo}`);
 
     // Prepare features for prediction
     const features = extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
@@ -97,7 +89,14 @@ const main = async () => {
     for (const modelName of Object.keys(models)) {
       const selectedModel = models[modelName]; // Use the current model
       const predictions = await selectedModel.predict(features, true);
-      const summarizedPredictions = twoValuesAverage(predictions);
+      
+      // Adjust predictions for 'relaxed' and 'sad'
+      let summarizedPredictions = twoValuesAverage(predictions);
+      
+      if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
+        summarizedPredictions = summarizedPredictions.map(value => 1 - value); // Reverse the predictions
+      }
+    
       console.log(`Predictions for ${modelName}:`, summarizedPredictions);
     }
 
@@ -105,37 +104,6 @@ const main = async () => {
     console.error('Error processing audio file:', err);
   }
 };
-
-function shortenAudio(audioIn, keepRatio = 0.5, trim = false) {
-  if (keepRatio < 0.15) {
-    keepRatio = 0.15; // Must keep at least 15% of the file
-  } else if (keepRatio > 0.66) {
-    keepRatio = 0.66; // Will keep at most 2/3 of the file
-  }
-
-  if (trim) {
-    const discardSamples = Math.floor(0.1 * audioIn.length); // Discard 10% on beginning and end
-    audioIn = audioIn.subarray(discardSamples, audioIn.length - discardSamples); // Create new view of buffer without beginning and end
-  }
-
-  const ratioSampleLength = Math.ceil(audioIn.length * keepRatio);
-  const patchSampleLength = 187 * 256; // Cut into patchSize chunks so there's no weird jumps in audio
-  const numPatchesToKeep = Math.ceil(ratioSampleLength / patchSampleLength);
-
-  // Space patchesToKeep evenly
-  const skipSize = Math.floor((audioIn.length - ratioSampleLength) / (numPatchesToKeep - 1));
-
-  let audioOut = [];
-  let startIndex = 0;
-  for (let i = 0; i < numPatchesToKeep; i++) {
-    let endIndex = startIndex + patchSampleLength;
-    let chunk = audioIn.slice(startIndex, endIndex);
-    audioOut.push(...chunk);
-    startIndex = endIndex + skipSize; // Discard even space
-  }
-
-  return Float32Array.from(audioOut);
-}
 
 // Run the main function
 main();
