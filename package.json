@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "2.7.0",
-    "audio-decode": "^1.4.0",
+    "audio-decode": "^2.2.2",
+    "audio-lena": "^2.3.0",
     "essentia.js": "^0.1.3",
     "express": "^4.18.2",
     "formidable": "^2.0.1",

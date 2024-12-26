@@ -28,19 +28,6 @@ async function loadTensorflowWASM() {
   return tf;
 }
 
-async function decodeAudioWebAPI(filepath) {
-  try {
-      const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      const buffer = fs.readFileSync(filepath);
-      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      return audioBuffer.getChannelData(0); // Returns Float32Array
-  } catch (error) {
-      console.error('Error decoding audio with Web Audio API:', error);
-      throw error;
-  }
-}
-
 async function initModels(tf) {
   const models = {};
   for (const [name, path] of Object.entries(modelPaths)) {
@@ -85,7 +72,8 @@ const main = async () => {
 
     const models = await initModels(tf); // Store models in an object
 
-    const buffer = fs.readFileSync('audio/1.mp3');
+    const buffer = fs.readFileSync('audio/2.mp3');
+ 
     const audio = await decode(buffer);
     const data = essentia.arrayToVector(audio._channelData[0]);
 
