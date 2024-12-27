@@ -2,9 +2,12 @@ import fs from 'fs';
 import decode from 'audio-decode';
 import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
 import * as tf from '@tensorflow/tfjs-node';
+import fetch from 'node-fetch'; // Add this line
+
 
 // Initialize Essentia
 const essentia = new Essentia(EssentiaWASM);
+
 
 // Model paths
 const modelPaths = {
@@ -29,6 +32,8 @@ async function initModels() {
   return models; // Return models object
 }
 
+const models = await initModels(tf);
+
 function twoValuesAverage(arrayOfArrays) {
   let firstValues = [];
   let secondValues = [];
@@ -45,6 +50,10 @@ function twoValuesAverage(arrayOfArrays) {
 }
 
 async function predict(audioUrl) {
+  // console.log(models)
+  if (models.length < 5) {
+    throw new Error("Not all models initialized yet... ")
+  }
   try {
     const response = await fetch(audioUrl);
     const buffer = await response.arrayBuffer();
@@ -64,14 +73,15 @@ async function predict(audioUrl) {
 
     console.log(`Processing ${audioUrl} - Duration: ${duration}, Energy: ${energy}, Key: ${key}, Mode: ${mode}, Loudness: ${loudness}, Tempo: ${tempo}`);
 
-    // Prepare features for prediction
-    const features = extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
+    const features = await extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
 
-    // Predict using all models
     const predictions = {};
+
     for (const modelName of Object.keys(models)) {
       const selectedModel = models[modelName]; // Use the current model
+      // console.log(selectedModel)
       const predictionsArray = await selectedModel.predict(features, true);
+      
 
       // Adjust predictions for 'relaxed' and 'sad'
       let summarizedPredictions = twoValuesAverage(predictionsArray);
@@ -79,6 +89,8 @@ async function predict(audioUrl) {
       if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
         summarizedPredictions = summarizedPredictions.map(value => 1 - value); // Reverse the predictions
       }
+
+      // console.log(summarizedPredictions)
 
       predictions[modelName] = summarizedPredictions;
     }
@@ -90,6 +102,6 @@ async function predict(audioUrl) {
   }
 }
 
-const models = initModels(tf);
 
-export { predict, initModels };
+
+export { predict };
