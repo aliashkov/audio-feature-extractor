@@ -1,17 +1,13 @@
-version: '3'
+version: '3.8'
 
 services:
-  app:
+  tensorflow-server:
     build: .
     ports:
-      - "3000:3000"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
     volumes:
-      - .:/app
-    depends_on:
-      - models
-
-  models:
-    build: .
-    command: node init-models.js
-    volumes:
-      - .:/app
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules

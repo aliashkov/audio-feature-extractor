@@ -1,9 +1,10 @@
 import fs from 'fs';
 import decode from 'audio-decode';
-import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
+// import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
+import * as tf from '@tensorflow/tfjs-node';
 
 // Initialize Essentia
-const essentia = new Essentia(EssentiaWASM);
+// const essentia = new Essentia(EssentiaWASM);
 
 // Model paths
 const modelPaths = {
@@ -17,7 +18,7 @@ const modelPaths = {
 // Extractor initialization
 const extractor = new EssentiaModel.EssentiaTFInputExtractor(EssentiaWASM, 'musicnn', false);
 
-async function initModels(tf) {
+async function initModels() {
   const models = {};
   for (const [name, path] of Object.entries(modelPaths)) {
     const { TensorflowMusiCNN } = await import('essentia.js/dist/essentia.js-model.umd.js');
