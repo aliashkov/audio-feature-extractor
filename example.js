@@ -50,7 +50,6 @@ function twoValuesAverage(arrayOfArrays) {
   return [firstValuesAvg, secondValuesAvg];
 }
 
-
 const main = async () => {
   try {
     const tf = await loadTensorflowWASM();
@@ -60,48 +59,58 @@ const main = async () => {
 
     const models = await initModels(tf); // Store models in an object
 
-    const buffer = fs.readFileSync('audio/5.mp3');
+    // Array of audio URLs
+    const audioUrls = [
+      'https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002ad4c0-96d8-4eb1-827c-323a8192c045/002ad4c0-96d8-4eb1-827c-323a8192c045.mp3',
+      // 'https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002b667c-a888-42d5-8ef4-487d8f0495f5/002b667c-a888-42d5-8ef4-487d8f0495f5.mp3',
+      //'https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002a94f2-37e6-4d63-bbd2-6da61a511262/002a94f2-37e6-4d63-bbd2-6da61a511262.mp3'
+    ];
 
-    console.log(buffer)
+    for (const audioUrl of audioUrls) {
+      try {
+        const response = await fetch(audioUrl);
+        const buffer = await response.arrayBuffer();
 
- 
-    const audio = await decode(buffer);
-    
-    const data = essentia.arrayToVector(audio._channelData[0]);
+        const audio = await decode(buffer);
+        const data = essentia.arrayToVector(audio._channelData[0]);
 
+        // Extract audio features
+        const duration = essentia.Duration(data).duration;
+        const energy = essentia.Energy(data).energy;
+        const keyExtractor = essentia.KeyExtractor(data);
+        const KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+        const key = KEYS.indexOf(keyExtractor.key);
+        const mode = keyExtractor.scale === 'major' ? 1 : 0;
+        const loudness = essentia.DynamicComplexity(data).loudness;
+        const tempo = essentia.PercivalBpmEstimator(data).bpm;
 
-    // Extract audio features
-    const duration = essentia.Duration(data).duration;
-    const energy = essentia.Energy(data).energy;
-    const keyExtractor = essentia.KeyExtractor(data);
-    const KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-    const key = KEYS.indexOf(keyExtractor.key);
-    const mode = keyExtractor.scale === 'major' ? 1 : 0;
-    const loudness = essentia.DynamicComplexity(data).loudness;
-    const tempo = essentia.PercivalBpmEstimator(data).bpm;
+        console.log(`Processing ${audioUrl} - Duration: ${duration}, Energy: ${energy}, Key: ${key}, Mode: ${mode}, Loudness: ${loudness}, Tempo: ${tempo}`);
 
-    console.log(`Duration: ${duration}, Energy: ${energy}, Key: ${key}, Mode: ${mode}, Loudness: ${loudness}, Tempo: ${tempo}`);
+        // Prepare features for prediction
+        const features = extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
 
-    // Prepare features for prediction
-    const features = extractor.computeFrameWise(audio._channelData[0], 256); // Adjust frame size here if needed
+        // Predict using all models
+        for (const modelName of Object.keys(models)) {
+          const selectedModel = models[modelName]; // Use the current model
+          const predictions = await selectedModel.predict(features, true);
 
-    // Predict using all models
-    for (const modelName of Object.keys(models)) {
-      const selectedModel = models[modelName]; // Use the current model
-      const predictions = await selectedModel.predict(features, true);
-      
-      // Adjust predictions for 'relaxed' and 'sad'
-      let summarizedPredictions = twoValuesAverage(predictions);
-      
-      if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
-        summarizedPredictions = summarizedPredictions.map(value => 1 - value); // Reverse the predictions
+          // Adjust predictions for 'relaxed' and 'sad'
+          let summarizedPredictions = twoValuesAverage(predictions);
+          
+          if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
+            summarizedPredictions = summarizedPredictions.map(value => 1 - value); // Reverse the predictions
+          }
+
+          console.log(`Predictions for ${modelName}:`, summarizedPredictions);
+        }
+
+      } catch (err) {
+        console.error(`Error processing audio file ${audioUrl}:`, err);
       }
-    
-      console.log(`Predictions for ${modelName}:`, summarizedPredictions);
     }
 
   } catch (err) {
-    console.error('Error processing audio file:', err);
+    console.error('Error initializing TensorFlow.js or models:', err);
   }
 };
 
