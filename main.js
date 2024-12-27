@@ -1,10 +1,10 @@
 import fs from 'fs';
 import decode from 'audio-decode';
-// import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
+import { Essentia, EssentiaWASM, EssentiaModel } from 'essentia.js';
 import * as tf from '@tensorflow/tfjs-node';
 
 // Initialize Essentia
-// const essentia = new Essentia(EssentiaWASM);
+const essentia = new Essentia(EssentiaWASM);
 
 // Model paths
 const modelPaths = {
