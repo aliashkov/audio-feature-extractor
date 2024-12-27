@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    depends_on:
+      - models
+
+  models:
+    build: .
+    command: node init-models.js
+    volumes:
+      - .:/app
