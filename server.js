@@ -1,31 +1,65 @@
 import express from 'express';
-import decode from 'audio-decode';
-import { predict } from './main.js';
+import { Worker } from 'worker_threads';
+import path from 'path';
+import { initModels } from './modelInitializer.js'; // New module for model initialization
 
 const app = express();
+const PORT = 3001;
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-app.post('/predict', (req, res) => {
-  console.log(77777);
-  const audioUrl = req.body.audioUrl; // Ensure audioUrl is coming from the request body
-  console.log(audioUrl);
+let models; // Declare models variable
 
-  if (!audioUrl) {
-    return res.status(400).json({ error: 'audioUrl is required' });
+async function loadModels() {
+  models = await initModels(); // Initialize models once
+  console.log('Models initialized and ready to use.');
+}
+
+// Route to handle predictions
+app.post('/predict', (req, res) => {
+  const audioUrls = req.body.audioUrls; // Expecting an array of audio URLs
+
+  if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length !== 3) {
+    return res.status(400).json({ error: 'Three audioUrls are required' });
   }
 
-  predict(audioUrl)
-    .then((predictions) => {
-      res.json(predictions);
+  const workers = audioUrls.map(audioUrl => {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(path.resolve('worker.js'), {
+        workerData: { audioUrl },
+      });
+
+      worker.on('message', (predictions) => {
+        resolve(predictions);
+      });
+
+      worker.on('error', (error) => {
+        console.error('Worker error:', error);
+        reject(error);
+      });
+
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          console.error(`Worker stopped with exit code ${code}`);
+          reject(new Error('Worker stopped unexpectedly'));
+        }
+      });
+    });
+  });
+
+  Promise.all(workers)
+    .then(results => {
+      res.json(results); // Send all predictions as an array
     })
-    .catch((err) => {
-      console.error('Error predicting:', err);
+    .catch(error => {
       res.status(500).json({ error: 'Internal Server Error' });
     });
 });
 
-app.listen(3001, () => {
-  console.log('Server listening on port 3001!');
+// Start the server and load models
+loadModels().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}!`);
+  });
 });
