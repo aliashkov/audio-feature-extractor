@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  tensorflow-server:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+    cap_add:
+      - SYS_ADMIN  # Add capabilities for WASM
