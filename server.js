@@ -1,7 +1,7 @@
 import express from 'express';
 import { Worker } from 'worker_threads';
 import path from 'path';
-import { initModels } from './modelInitializer.js'; // New module for model initialization
+import { initModels } from './modelInitializer.js'; // Ensure this imports your model initialization logic
 
 const app = express();
 const PORT = 3001;
@@ -27,7 +27,7 @@ app.post('/predict', (req, res) => {
   const workers = audioUrls.map(audioUrl => {
     return new Promise((resolve, reject) => {
       const worker = new Worker(path.resolve('worker.js'), {
-        workerData: { audioUrl },
+        workerData: { audioUrl }, // Pass audio URL to the worker
       });
 
       worker.on('message', (predictions) => {
