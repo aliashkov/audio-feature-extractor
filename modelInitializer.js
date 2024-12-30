@@ -10,7 +10,7 @@ const modelPaths = {
 };
 
 // Initialize Essentia
-const essentia = new Essentia(EssentiaWASM);
+// const essentia = new Essentia(EssentiaWASM);
 
 // Function to initialize models
 export async function initModels() {
