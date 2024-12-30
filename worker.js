@@ -31,11 +31,16 @@ async function computeFeatures(audioUrl) {
   const buffer = await response.arrayBuffer();
   const audio = await decode(buffer);
   const data = essentia.arrayToVector(audio._channelData[0]);
-  
-  
-  const features = await extractor.computeFrameWise(audio._channelData[0], 256);
-  return features;
+
+  // Extract audio features
+  const energy = essentia.Energy(data).energy;
+  const loudness = essentia.DynamicComplexity(data).loudness;
+  const tempo = essentia.PercivalBpmEstimator(data).bpm;
+
+  const features = await extractor.computeFrameWise(audio._channelData[0], 1024);
+  return { features, energy, loudness, tempo };
 }
+
 
 function twoValuesAverage(arrayOfArrays) {
   let firstValues = [];
@@ -52,32 +57,39 @@ function twoValuesAverage(arrayOfArrays) {
   return [firstValuesAvg, secondValuesAvg];
 }
 
-async function predict(features, models) {
+async function predict(featuresData, models) {
   const predictions = {};
-  
+
   for (const modelName of Object.keys(models)) {
     const selectedModel = models[modelName];
-    const predictionsArray = await selectedModel.predict(features, true);
+    const predictionsArray = await selectedModel.predict(featuresData.features, true);
 
     let summarizedPredictions = twoValuesAverage(predictionsArray);
-    console.log(summarizedPredictions)
+    console.log(summarizedPredictions);
     if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
       summarizedPredictions = summarizedPredictions.map(value => 1 - value);
     }
 
-    const prediction = summarizedPredictions[0]
-
+    const prediction = summarizedPredictions[0];
     predictions[modelName] = prediction;
   }
 
-  return predictions;
+  const formattedPredictions = {
+    ...predictions,
+    energy: featuresData.energy,
+    loudness: featuresData.loudness,
+    tempo: featuresData.tempo,
+  };
+
+
+  return formattedPredictions;
 }
 
 async function run() {
   try {
-    const models = await initializeModels(); // Initialize models here
-    const features = await computeFeatures(workerData.audioUrl);
-    const predictions = await predict(features, models);
+    const models = await initializeModels();
+    const featuresData = await computeFeatures(workerData.audioUrl);
+    const predictions = await predict(featuresData, models);
     parentPort.postMessage(predictions);
   } catch (error) {
     console.error('Error in worker:', error);
