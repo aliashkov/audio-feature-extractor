@@ -32,6 +32,7 @@ async function computeFeatures(audioUrl) {
   const audio = await decode(buffer);
   const data = essentia.arrayToVector(audio._channelData[0]);
   
+  
   const features = await extractor.computeFrameWise(audio._channelData[0], 256);
   return features;
 }
@@ -59,11 +60,14 @@ async function predict(features, models) {
     const predictionsArray = await selectedModel.predict(features, true);
 
     let summarizedPredictions = twoValuesAverage(predictionsArray);
+    console.log(summarizedPredictions)
     if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
       summarizedPredictions = summarizedPredictions.map(value => 1 - value);
     }
 
-    predictions[modelName] = summarizedPredictions;
+    const prediction = summarizedPredictions[0]
+
+    predictions[modelName] = prediction;
   }
 
   return predictions;
