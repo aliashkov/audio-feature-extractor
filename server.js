@@ -2,6 +2,7 @@ import express from 'express';
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { initModels } from './modelInitializer.js'; // Ensure this imports your model initialization logic
+import { predict } from "./utils/utils.js"
 
 const app = express();
 const PORT = 3001;
@@ -18,7 +19,7 @@ async function loadModels() {
 
 // Route to handle predictions
 app.post('/predict', (req, res) => {
-  const audioUrls = req.body.audioUrls; // Expecting an array of audio URLs
+  const audioUrls = req.body.audioUrls;
 
   if (!audioUrls || !Array.isArray(audioUrls)) {
     return res.status(400).json({ error: 'audioUrls are required' });
@@ -27,11 +28,23 @@ app.post('/predict', (req, res) => {
   const workers = audioUrls.map(audioUrl => {
     return new Promise((resolve, reject) => {
       const worker = new Worker(path.resolve('worker.js'), {
-        workerData: { audioUrl }, // Pass audio URL to the worker
+        workerData: { audioUrl }
       });
 
-      worker.on('message', (predictions) => {
-        resolve(predictions);
+      worker.on('message', async (message) => {
+        try {
+          if (message.type === 'features') {
+            // Use the initialized models in the main thread
+
+            const predictions = await predict(message.featuresData, models);
+
+            resolve(predictions);
+          } else if (message.type === 'error') {
+            reject(new Error(message.error));
+          }
+        } catch (error) {
+          reject(error);
+        }
       });
 
       worker.on('error', (error) => {
@@ -50,12 +63,15 @@ app.post('/predict', (req, res) => {
 
   Promise.all(workers)
     .then(results => {
-      res.json(results); // Send all predictions as an array
+      res.json(results);
     })
     .catch(error => {
       res.status(500).json({ error: 'Internal Server Error' });
     });
 });
+
+
+
 
 // Start the server and load models
 loadModels().then(() => {

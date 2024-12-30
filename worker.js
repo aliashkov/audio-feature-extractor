@@ -42,20 +42,7 @@ async function computeFeatures(audioUrl) {
 }
 
 
-function twoValuesAverage(arrayOfArrays) {
-  let firstValues = [];
-  let secondValues = [];
 
-  arrayOfArrays.forEach((v) => {
-    firstValues.push(v[0]);
-    secondValues.push(v[1]);
-  });
-
-  const firstValuesAvg = firstValues.reduce((acc, val) => acc + val) / firstValues.length;
-  const secondValuesAvg = secondValues.reduce((acc, val) => acc + val) / secondValues.length;
-
-  return [firstValuesAvg, secondValuesAvg];
-}
 
 async function predict(featuresData, models) {
   const predictions = {};
@@ -87,13 +74,21 @@ async function predict(featuresData, models) {
 
 async function run() {
   try {
-    const models = await initializeModels();
+    // Only compute features in the worker
     const featuresData = await computeFeatures(workerData.audioUrl);
-    const predictions = await predict(featuresData, models);
-    parentPort.postMessage(predictions);
+
+    // console.log(featuresData)
+    // Send features back to main thread
+    parentPort.postMessage({
+      type: 'features',
+      featuresData: featuresData
+    });
   } catch (error) {
     console.error('Error in worker:', error);
-    parentPort.postMessage({ error: 'Error processing audio' });
+    parentPort.postMessage({
+      type: 'error',
+      error: 'Error processing audio'
+    });
   }
 }
 
