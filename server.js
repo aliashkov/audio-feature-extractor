@@ -20,8 +20,8 @@ async function loadModels() {
 app.post('/predict', (req, res) => {
   const audioUrls = req.body.audioUrls; // Expecting an array of audio URLs
 
-  if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length !== 3) {
-    return res.status(400).json({ error: 'Three audioUrls are required' });
+  if (!audioUrls || !Array.isArray(audioUrls)) {
+    return res.status(400).json({ error: 'audioUrls are required' });
   }
 
   const workers = audioUrls.map(audioUrl => {
