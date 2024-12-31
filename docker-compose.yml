@@ -3,6 +3,7 @@ version: '3.8'
 services:
   tensorflow-server:
     build: .
+    image: shoot2033/tensorflow-server:latest  # Replace with your Docker Hub username
     ports:
       - "3001:3001"
     environment:
