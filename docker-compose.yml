@@ -2,8 +2,12 @@ version: '3.8'
 
 services:
   tensorflow-server:
-    build: .
-    image: shoot2033/tensorflow-server:latest
+    build:
+      context: .
+      tags:
+        - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:${COMMIT_SHA:-latest}
+        - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:latest
+    image: registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:${COMMIT_SHA:-latest}
     ports:
       - "3001:3001"
     environment:
