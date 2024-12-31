@@ -3,7 +3,7 @@ version: '3.8'
 services:
   tensorflow-server:
     build: .
-    image: shoot2033/tensorflow-server:latest  # Replace with your Docker Hub username
+    image: shoot2033/tensorflow-server:latest
     ports:
       - "3001:3001"
     environment:
@@ -12,3 +12,26 @@ services:
     volumes:
       - ./:/usr/src/app
       - /usr/src/app/node_modules
+    deploy:
+      resources:
+        limits:
+          memory: 4G    # Maximum memory limit
+        reservations:
+          memory: 2G    # Minimum memory reservation
+    mem_swappiness: 0   # Disable swapping to disk
+    oom_kill_disable: false  # Allow container to be killed if it exceeds memory limit
+    logging:
+      options:
+        max-size: "10m"   # Maximum log file size
+        max-file: "3"     # Number of log files to keep
+
+# Add automatic cleanup for unused images and containers
+x-auto-cleanup:
+  prune:
+    image: docker:cli
+    command: >
+      sh -c "
+        docker system prune -af --filter 'until=24h'
+      "
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
