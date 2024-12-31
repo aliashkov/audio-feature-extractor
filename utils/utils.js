@@ -1,3 +1,6 @@
+import * as tf from '@tensorflow/tfjs-node';
+
+
 export function twoValuesAverage(arrayOfArrays) {
     let firstValues = [];
     let secondValues = [];
@@ -14,28 +17,44 @@ export function twoValuesAverage(arrayOfArrays) {
 }
 
 export async function predict(featuresData, models) {
-    const predictions = {};
+  const predictions = {};
   
+  try {
     for (const modelName of Object.keys(models)) {
       const selectedModel = models[modelName];
-  
+      
+      // Perform prediction
       const predictionsArray = await selectedModel.predict(featuresData.features, true);
-  
-      let summarizedPredictions = twoValuesAverage(predictionsArray);
+      
+      // Handle different types of prediction results
+      let predictionsData;
+      if (predictionsArray instanceof tf.Tensor) {
+        // If it's a tensor, use dataSync() or await data()
+        predictionsData = Array.from(predictionsArray.dataSync());
+        predictionsArray.dispose(); // Clean up tensor
+      } else if (Array.isArray(predictionsArray)) {
+        // If it's already an array
+        predictionsData = predictionsArray;
+      } else {
+        // If it's a single value
+        predictionsData = [predictionsArray];
+      }
+      
+      let summarizedPredictions = twoValuesAverage(predictionsData);
       if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
         summarizedPredictions = summarizedPredictions.map(value => 1 - value);
       }
-  
-      const prediction = summarizedPredictions[0];
-      predictions[modelName] = prediction;
+      
+      predictions[modelName] = summarizedPredictions[0];
     }
-  
-    const formattedPredictions = {
+    
+    return {
       ...predictions,
       energy: featuresData.energy,
       loudness: featuresData.loudness,
       tempo: featuresData.tempo,
     };
-  
-    return formattedPredictions;
+  } catch (error) {
+    throw error;
   }
+}

@@ -18,56 +18,57 @@ async function loadModels() {
 }
 
 // Route to handle predictions
-app.post('/predict', (req, res) => {
+app.post('/predict', async (req, res) => {
   const audioUrls = req.body.audioUrls;
-
+  
   if (!audioUrls || !Array.isArray(audioUrls)) {
-    return res.status(400).json({ error: 'audioUrls are required' });
+      return res.status(400).json({ error: 'audioUrls are required' });
   }
-
+  
   const workers = audioUrls.map(audioUrl => {
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(path.resolve('worker.js'), {
-        workerData: { audioUrl }
+      return new Promise((resolve, reject) => {
+          const worker = new Worker(path.resolve('worker.js'), {
+              workerData: { audioUrl }
+          });
+          
+          worker.on('message', async (message) => {
+              try {
+                  if (message.type === 'features') {
+                      const predictions = await predict(message.featuresData, models);
+                      worker.terminate(); // Terminate worker after prediction
+                      resolve(predictions);
+                  } else if (message.type === 'error') {
+                      worker.terminate();
+                      reject(new Error(message.error));
+                  }
+              } catch (error) {
+                  worker.terminate();
+                  reject(error);
+              }
+          });
+          
+          worker.on('error', (error) => {
+              console.error('Worker error:', error);
+              worker.terminate();
+              reject(error);
+          });
+          
+          worker.on('exit', (code) => {
+              if (code !== 0) {
+                  console.error(`Worker stopped with exit code ${code}`);
+                  reject(new Error('Worker stopped unexpectedly'));
+              }
+          });
       });
-
-      worker.on('message', async (message) => {
-        try {
-          if (message.type === 'features') {
-            // Use the initialized models in the main thread
-
-            const predictions = await predict(message.featuresData, models);
-
-            resolve(predictions);
-          } else if (message.type === 'error') {
-            reject(new Error(message.error));
-          }
-        } catch (error) {
-          reject(error);
-        }
-      });
-
-      worker.on('error', (error) => {
-        console.error('Worker error:', error);
-        reject(error);
-      });
-
-      worker.on('exit', (code) => {
-        if (code !== 0) {
-          console.error(`Worker stopped with exit code ${code}`);
-          reject(new Error('Worker stopped unexpectedly'));
-        }
-      });
-    });
   });
-
-  Promise.all(workers)
-    .then(results => {
+  
+  try {
+      const results = await Promise.all(workers);
       res.json(results);
-    })
-    .catch(error => {
+  } catch (error) {
+      console.error('Prediction error:', error);
       res.status(500).json({ error: 'Internal Server Error' });
-    });
+  }
 });
 
 
