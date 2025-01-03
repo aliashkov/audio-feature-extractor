@@ -18,7 +18,7 @@ const redis = new Redis({
 });
 
 // BullMQ Queue setup
-const inputQueue = new Queue('audioProcessing', {
+const inputQueue = new Queue('audio-features', {
   connection: {
     host: process.env.REDIS_HOST || 'redis',
     port: process.env.REDIS_PORT || 6379,
@@ -26,7 +26,7 @@ const inputQueue = new Queue('audioProcessing', {
   }
 });
 
-const outputQueue = new Queue('processedResults', {
+const outputQueue = new Queue('audio-features-results', {
   connection: {
     host: process.env.REDIS_HOST || 'redis',
     port: process.env.REDIS_PORT || 6379,
