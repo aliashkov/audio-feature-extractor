@@ -50,7 +50,7 @@ function generateTaskId(audioUrl) {
 }
 
 // BullMQ Worker for processing audio
-const bullWorker = new BullWorker('audioProcessing', async job => {
+const bullWorker = new BullWorker('audio-features', async job => {
   const { audioUrl } = job.data;
   const taskId = generateTaskId(audioUrl);
 
@@ -66,7 +66,7 @@ const bullWorker = new BullWorker('audioProcessing', async job => {
           // Store result in Redis with 1 hour expiration
           await redis.set(taskId, JSON.stringify(predictions), 'EX', 3600);
           // Add to output queue
-          await outputQueue.add('processedResult', {
+          await outputQueue.add('audio-features-results', {
             taskId,
             predictions,
             audioUrl
@@ -116,7 +116,7 @@ app.post('/predict', async (req, res) => {
   try {
     const jobs = await Promise.all(
       audioUrls.map(audioUrl => 
-        inputQueue.add('processAudio', { audioUrl })
+        inputQueue.add('audio-features', { audioUrl })
       )
     );
 
