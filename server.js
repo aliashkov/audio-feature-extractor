@@ -53,7 +53,7 @@ const bullWorker = new BullWorker(
   'audio-features',
   async (job) => {
     const jobStartTime = Date.now();
-    
+
     if (!models) {
       throw new Error('Models are not initialized yet.');
     }
@@ -88,19 +88,19 @@ const bullWorker = new BullWorker(
             });
 
             await worker.terminate();
-            
+
             // Track job completion
             completedJobs++;
             const jobDuration = Date.now() - jobStartTime;
             console.log(`Job ${job.id} completed in ${jobDuration}ms`);
-            
+
             if (completedJobs === totalJobs) {
               const totalDuration = Date.now() - startTime;
               console.log(`\nAll jobs completed!`);
-              console.log(`Total execution time: ${totalDuration}ms (${(totalDuration/1000).toFixed(2)} seconds)`);
-              console.log(`Average time per job: ${(totalDuration/totalJobs).toFixed(2)}ms`);
+              console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
+              console.log(`Average time per job: ${(totalDuration / totalJobs).toFixed(2)}ms`);
             }
-            
+
             resolve(predictions);
           } else {
             clearTimeout(timeout);
@@ -146,16 +146,17 @@ const intervalId = setInterval(() => {
     heapUsed: `${Math.round(used.heapUsed / 1024 / 1024)}MB`,
     external: `${Math.round(used.external / 1024 / 1024)}MB`,
   });
-  
+
   // Log progress
   if (startTime) {
     const elapsedTime = Date.now() - startTime;
     console.log(`Progress: ${completedJobs}/${totalJobs} jobs completed`);
-    console.log(`Time elapsed: ${(elapsedTime/1000).toFixed(2)} seconds`);
+    console.log(`Time elapsed: ${(elapsedTime / 1000).toFixed(2)} seconds`);
   }
 }, 30000);
 
-async function addJobs(audioUrls) {
+// Function to add jobs randomly
+async function addJobsRandomly(audioUrls) {
   if (!Array.isArray(audioUrls)) {
     throw new Error('audioUrls should be an array');
   }
@@ -164,36 +165,49 @@ async function addJobs(audioUrls) {
     throw new Error('Models are not initialized yet.');
   }
 
-  // Initialize timing tracking
   startTime = Date.now();
   completedJobs = 0;
   totalJobs = audioUrls.length;
-  
+
   console.log(`Starting processing of ${totalJobs} jobs at ${new Date().toISOString()}`);
 
-  const jobs = await Promise.all(
-    audioUrls.map((audioUrl) =>
-      inputQueue.add('audio-features', { audioUrl }, {
-        removeOnComplete: true,
-        removeOnFail: true
-      })
-    )
-  );
+  const intervalId = setInterval(async () => {
+    if (audioUrls.length === 0) {
+      clearInterval(intervalId);
+      console.log('All jobs have been added.');
+      return;
+    }
 
-  console.log('Jobs added:', jobs.map((job) => job.id));
+    const randomIndex = Math.floor(Math.random() * audioUrls.length);
+    const audioUrl = audioUrls[randomIndex];
+
+    await inputQueue.add('audio-features', { audioUrl }, {
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+
+    console.log(`Added job for: ${audioUrl}`);
+
+    // Remove the added URL to avoid duplicates
+    audioUrls.splice(randomIndex, 1);
+
+    // Random delay between 5 and 30 seconds
+    const delay = Math.floor(Math.random() * (30000 - 5000 + 1)) + 5000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }, 1000); // Loop interval; adjust as needed
 }
 
 process.on('SIGTERM', async () => {
   clearInterval(intervalId);
-  
+
   // Log final statistics if process is terminated
   if (startTime) {
     const totalDuration = Date.now() - startTime;
     console.log(`\nProcess terminated!`);
     console.log(`Completed ${completedJobs}/${totalJobs} jobs`);
-    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration/1000).toFixed(2)} seconds)`);
+    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
   }
-  
+
   await bullWorker.close();
   await redis.quit();
   process.exit(0);
@@ -219,13 +233,13 @@ loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-      
+
       // Add only the first 5 URLs to the queue
       const initialBatch = exampleAudioUrls.slice(0, 5);
       await addJobs(initialBatch);
 
       console.log('First batch of 5 jobs added.');
-      
+
       // Optional: Add logic to process the remaining URLs later
       const remainingUrls = exampleAudioUrls.slice(5);
       if (remainingUrls.length > 0) {
