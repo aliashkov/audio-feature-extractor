@@ -59,6 +59,15 @@ function processNext() {
   });
 }
 
+app.get('/health', (req, res) => {
+    const healthStatus = {
+      status: 'UP',
+      modelsInitialized: !!models,
+    };
+    
+    res.json(healthStatus);
+});
+
 // Route to handle predictions
 app.post('/predict', (req, res) => {
   const audioUrls = req.body.audioUrls;
