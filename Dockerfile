@@ -4,7 +4,7 @@ WORKDIR /usr/src/app
 
 # Install app dependencies
 COPY package*.json ./
-RUN npm install bullmq
+RUN npm install bullmq@5.10.3
 RUN npm install
 
 # Bundle app source

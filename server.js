@@ -36,15 +36,6 @@ const outputQueue = new Queue('audio-features-results', {
 
 app.use(express.json());
 
-const authenticateApiKey = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    if (!token || token !== API_KEY) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    next();
-};
 
 let models;
 const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 5;
@@ -106,7 +97,7 @@ const bullWorker = new BullWorker('audioProcessing', async job => {
   }
 });
 
-app.get('/health', authenticateApiKey, (req, res) => {
+app.get('/health', (req, res) => {
   const healthStatus = {
     status: 'UP',
     modelsInitialized: !!models,
@@ -115,7 +106,7 @@ app.get('/health', authenticateApiKey, (req, res) => {
   res.json(healthStatus);
 });
 
-app.post('/predict', authenticateApiKey, async (req, res) => {
+app.post('/predict', async (req, res) => {
   const audioUrls = req.body.audioUrls;
 
   if (!audioUrls || !Array.isArray(audioUrls)) {
@@ -141,7 +132,7 @@ app.post('/predict', authenticateApiKey, async (req, res) => {
 });
 
 // Endpoint to check job status
-app.get('/status/:jobId', authenticateApiKey, async (req, res) => {
+app.get('/status/:jobId', async (req, res) => {
   try {
     const job = await inputQueue.getJob(req.params.jobId);
     if (!job) {
