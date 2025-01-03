@@ -33,7 +33,7 @@ const outputQueue = new Queue('audio-features-results', {
 });
 
 let models;
-const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 5;
+const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 3;
 
 // Function to load models
 async function loadModels() {
@@ -70,7 +70,7 @@ const bullWorker = new BullWorker(
             console.log(predictions)
 
             // Store result in Redis with 1-hour expiration
-            await redis.set(taskId, JSON.stringify(predictions), 'EX', 3600);
+            // await redis.set(taskId, JSON.stringify(predictions), 'EX', 3600);
 
             // Add to output queue
             await outputQueue.add('audio-features-results', {
@@ -135,10 +135,20 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Example usage: manually add jobs
 const exampleAudioUrls = [
   'https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002a4760-1136-42f5-b75e-7f32f08969ee/002a4760-1136-42f5-b75e-7f32f08969ee.mp3',
   'https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002a20e6-99d4-4037-a792-5c638fd74ac6/002a20e6-99d4-4037-a792-5c638fd74ac6.mp3',
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/00277e04-faab-4dda-8524-5c7cc11ad3b4/00277e04-faab-4dda-8524-5c7cc11ad3b4.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/00279b78-6acb-4807-85da-0fae325caeaf/00279b78-6acb-4807-85da-0fae325caeaf.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/00287ae5-b072-41a4-b865-9d518da0e4cc/00287ae5-b072-41a4-b865-9d518da0e4cc.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/00288e32-ee23-401f-acc1-2ad44b1b1a93/00288e32-ee23-401f-acc1-2ad44b1b1a93.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/0028cae1-7a66-4c9c-8c7c-4eb61ef304d8/0028cae1-7a66-4c9c-8c7c-4eb61ef304d8.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/00292d78-3625-4690-b6f7-75b6ad7c41c4/00292d78-3625-4690-b6f7-75b6ad7c41c4.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002947d7-d2dd-4979-bb4a-23e5e496ec56/002947d7-d2dd-4979-bb4a-23e5e496ec56.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/0029e583-4369-4831-823d-24dd4f7b7bed/0029e583-4369-4831-823d-24dd4f7b7bed.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/0029fdec-d126-40fe-8277-fb22fdcf0c3a/0029fdec-d126-40fe-8277-fb22fdcf0c3a.mp3",
+  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002a20e6-99d4-4037-a792-5c638fd74ac6/002a20e6-99d4-4037-a792-5c638fd74ac6.mp3",
+  
   // Add more URLs if needed
 ];
 
