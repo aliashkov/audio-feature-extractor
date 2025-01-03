@@ -218,8 +218,24 @@ const exampleAudioUrls = [
 loadModels()
   .then(async () => {
     if (models) {
-      console.log('Models are ready. Adding example jobs...');
-      await addJobs(exampleAudioUrls);
+      console.log('Models are ready. Adding the first batch of jobs...');
+      
+      // Add only the first 5 URLs to the queue
+      const initialBatch = exampleAudioUrls.slice(0, 5);
+      await addJobs(initialBatch);
+
+      console.log('First batch of 5 jobs added.');
+      
+      // Optional: Add logic to process the remaining URLs later
+      const remainingUrls = exampleAudioUrls.slice(5);
+      if (remainingUrls.length > 0) {
+        console.log(`There are ${remainingUrls.length} remaining URLs to process.`);
+        // Add more jobs as needed, e.g., after some delay
+        setTimeout(async () => {
+          console.log('Adding remaining jobs...');
+          await addJobs(remainingUrls);
+        }, 60000); // Add remaining jobs after 60 seconds
+      }
     } else {
       console.error('Failed to initialize models. Exiting...');
       process.exit(1);
