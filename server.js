@@ -10,9 +10,11 @@ const PORT = 3001;
 app.use(express.json());
 
 let models; 
-const maxConcurrentWorkers = 5;
+const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 5;
 const queue = [];
 let activeWorkers = 0;
+
+console.log(maxConcurrentWorkers)
 
 async function loadModels() {
   models = await initModels(); // Initialize models once

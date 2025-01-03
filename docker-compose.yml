@@ -8,6 +8,7 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=production
+      - MAX_CONCURRENT_WORKERS=5
     restart: unless-stopped
     volumes:
       - ./:/usr/src/app
