@@ -100,7 +100,7 @@ const bullWorker = new BullWorker(
     }
   },
   {
-    concurrency: 1,
+    concurrency: maxConcurrentWorkers,
     connection: {
       host: process.env.REDIS_HOST || 'redis',
       port: process.env.REDIS_PORT || 6379,
