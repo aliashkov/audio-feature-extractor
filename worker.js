@@ -6,8 +6,8 @@ import fetch from 'node-fetch';
 const essentia = new Essentia(EssentiaWASM);
 const extractor = new EssentiaModel.EssentiaTFInputExtractor(EssentiaWASM, 'musicnn', false);
 
-async function computeFeatures(audioUrl) {
-  const response = await fetch(audioUrl);
+async function computeFeatures(offlineUrl) {
+  const response = await fetch(offlineUrl);
   const buffer = await response.arrayBuffer();
   const audio = await decode(buffer);
   const data = essentia.arrayToVector(audio._channelData[0]);
@@ -24,7 +24,7 @@ async function computeFeatures(audioUrl) {
 async function run() {
   try {
     // Only compute features in the worker
-    const featuresData = await computeFeatures(workerData.audioUrl);
+    const featuresData = await computeFeatures(workerData.offlineUrl);
 
     // console.log(featuresData)
     // Send features back to main thread

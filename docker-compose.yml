@@ -22,7 +22,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - API_KEY=${API_KEY}
     restart: unless-stopped
     volumes:
       - ./:/usr/src/app

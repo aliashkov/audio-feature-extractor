@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import { Queue, Worker as BullWorker } from 'bullmq';
 import { initModels } from './modelInitializer.js';
 import { predict } from './utils/utils.js';
+import { exampleTracks } from './utils/tracks.js';
 
 const PORT = 3001; // Optional, if you want to log the port
 const API_KEY = process.env.API_KEY;
@@ -45,25 +46,26 @@ async function loadModels() {
   console.log('Models initialized and ready to use.');
 }
 
-function generateTaskId(audioUrl) {
-  return `task:${audioUrl}`;
+function generateTaskId(offlineUrl) {
+  return `task:${offlineUrl}`;
 }
 
 const bullWorker = new BullWorker(
   'audio-features',
   async (job) => {
     const jobStartTime = Date.now();
-    
+
     if (!models) {
       throw new Error('Models are not initialized yet.');
     }
 
-    const { audioUrl } = job.data;
-    const taskId = generateTaskId(audioUrl);
+    const { offlineUrl, trackId } = job.data;
+
+    const taskId = generateTaskId(trackId);
 
     try {
       const worker = new Worker(path.resolve('worker.js'), {
-        workerData: { audioUrl },
+        workerData: { offlineUrl },
         resourceLimits: {
           maxOldGenerationSizeMb: 512,
           maxYoungGenerationSizeMb: 128,
@@ -81,28 +83,25 @@ const bullWorker = new BullWorker(
             clearTimeout(timeout);
             const predictions = await predict(message.featuresData, models);
 
-            console.log(predictions)
-
             await outputQueue.add('audio-features-results', {
-              taskId,
+              trackId,
               predictions,
-              audioUrl,
             });
 
             await worker.terminate();
-            
+
             // Track job completion
             completedJobs++;
             const jobDuration = Date.now() - jobStartTime;
             console.log(`Job ${job.id} completed in ${jobDuration}ms`);
-            
+
             if (completedJobs === totalJobs) {
               const totalDuration = Date.now() - startTime;
               console.log(`\nAll jobs completed!`);
-              console.log(`Total execution time: ${totalDuration}ms (${(totalDuration/1000).toFixed(2)} seconds)`);
-              console.log(`Average time per job: ${(totalDuration/totalJobs).toFixed(2)}ms`);
+              console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
+              console.log(`Average time per job: ${(totalDuration / totalJobs).toFixed(2)}ms`);
             }
-            
+
             resolve(predictions);
           } else {
             clearTimeout(timeout);
@@ -148,94 +147,71 @@ const intervalId = setInterval(() => {
     heapUsed: `${Math.round(used.heapUsed / 1024 / 1024)}MB`,
     external: `${Math.round(used.external / 1024 / 1024)}MB`,
   });
-  
+
   // Log progress
   if (startTime) {
     const elapsedTime = Date.now() - startTime;
     console.log(`Progress: ${completedJobs}/${totalJobs} jobs completed`);
-    console.log(`Time elapsed: ${(elapsedTime/1000).toFixed(2)} seconds`);
+    console.log(`Time elapsed: ${(elapsedTime / 1000).toFixed(2)} seconds`);
   }
 }, 30000);
 
-async function addJobs(audioUrls) {
-  if (!Array.isArray(audioUrls)) {
-    throw new Error('audioUrls should be an array');
+async function addJobs(tracks) {
+  if (!Array.isArray(tracks)) {
+    throw new Error('Tracks should be an array');
   }
 
   if (!models) {
     throw new Error('Models are not initialized yet.');
   }
 
+  
+
   // Initialize timing tracking
   startTime = Date.now();
   completedJobs = 0;
-  totalJobs = audioUrls.length;
-  
+  totalJobs = tracks.length;
+
   console.log(`Starting processing of ${totalJobs} jobs at ${new Date().toISOString()}`);
 
   const jobs = await Promise.all(
-    audioUrls.map((audioUrl) =>
-      inputQueue.add('audio-features', { audioUrl }, {
-        removeOnComplete: true,
-        removeOnFail: true
-      })
+    tracks.map(({ trackId, offlineUrl }) =>
+      
+      inputQueue.add(
+        'audio-features',
+        { trackId, offlineUrl },
+        {
+          removeOnComplete: true,
+          removeOnFail: true,
+        }
+      )
     )
   );
 
   console.log('Jobs added:', jobs.map((job) => job.id));
 }
 
-process.on('SIGTERM', async () => {
-  clearInterval(intervalId);
-  
-  // Log final statistics if process is terminated
-  if (startTime) {
-    const totalDuration = Date.now() - startTime;
-    console.log(`\nProcess terminated!`);
-    console.log(`Completed ${completedJobs}/${totalJobs} jobs`);
-    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration/1000).toFixed(2)} seconds)`);
-  }
-  
-  await bullWorker.close();
-  await redis.quit();
-  process.exit(0);
-});
 
-const exampleAudioUrls = [
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002b7fb1-42f5-4e88-a2cf-7f87b2dff7a9/002b7fb1-42f5-4e88-a2cf-7f87b2dff7a9.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002a4760-1136-42f5-b75e-7f32f08969ee/002a4760-1136-42f5-b75e-7f32f08969ee.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/0029fdec-d126-40fe-8277-fb22fdcf0c3a/0029fdec-d126-40fe-8277-fb22fdcf0c3a.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002d2c1e-e483-4db2-84aa-7b5cf8c5f614/002d2c1e-e483-4db2-84aa-7b5cf8c5f614.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002cad9b-932b-48c0-b842-470e222c939a/002cad9b-932b-48c0-b842-470e222c939a.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002c2360-cb7e-4281-a73e-95e09b80cd60/002c2360-cb7e-4281-a73e-95e09b80cd60.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002bd740-635c-4535-9974-bac90bc574d2/002bd740-635c-4535-9974-bac90bc574d2.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002bc3c3-f410-400a-ac5f-0605c1f9c517/002bc3c3-f410-400a-ac5f-0605c1f9c517.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002bc0a8-b53b-4f20-8e49-cef2d9e5a1a3/002bc0a8-b53b-4f20-8e49-cef2d9e5a1a3.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002b7fb1-42f5-4e88-a2cf-7f87b2dff7a9/002b7fb1-42f5-4e88-a2cf-7f87b2dff7a9.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002b667c-a888-42d5-8ef4-487d8f0495f5/002b667c-a888-42d5-8ef4-487d8f0495f5.mp3",
-  "https://link.storjshare.io/raw/jvunpvyh2hogqgydf4dspxkupzma/tracks/002ad4c0-96d8-4eb1-827c-323a8192c045/002ad4c0-96d8-4eb1-827c-323a8192c045.mp3"
-
-];
 
 loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-      
-      // Add only the first 5 URLs to the queue
-      const initialBatch = exampleAudioUrls.slice(0, 5);
+
+      // Add only the first 5 tracks to the queue
+      const initialBatch = exampleTracks.slice(0, 5);
       await addJobs(initialBatch);
 
       console.log('First batch of 5 jobs added.');
-      
-      // Optional: Add logic to process the remaining URLs later
-      const remainingUrls = exampleAudioUrls.slice(5);
-      if (remainingUrls.length > 0) {
-        console.log(`There are ${remainingUrls.length} remaining URLs to process.`);
+
+      // Optional: Add logic to process the remaining tracks later
+      const remainingTracks = exampleTracks.slice(5);
+      if (remainingTracks.length > 0) {
+        console.log(`There are ${remainingTracks.length} remaining tracks to process.`);
         // Add more jobs as needed, e.g., after some delay
         setTimeout(async () => {
           console.log('Adding remaining jobs...');
-          await addJobs(remainingUrls);
+          await addJobs(remainingTracks);
         }, 60000); // Add remaining jobs after 60 seconds
       }
     } else {
@@ -247,3 +223,20 @@ loadModels()
     console.error('Error loading models:', error);
     process.exit(1);
   });
+
+
+process.on('SIGTERM', async () => {
+  clearInterval(intervalId);
+
+  // Log final statistics if process is terminated
+  if (startTime) {
+    const totalDuration = Date.now() - startTime;
+    console.log(`\nProcess terminated!`);
+    console.log(`Completed ${completedJobs}/${totalJobs} jobs`);
+    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
+  }
+
+  await bullWorker.close();
+  await redis.quit();
+  process.exit(0);
+});
