@@ -20,10 +20,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G    # Maximum memory limit
+          memory: 3G    # Maximum memory limit
         reservations:
           memory: 2G    # Minimum memory reservation
-    mem_swappiness: 0   # Disable swapping to disk
     oom_kill_disable: false  # Allow container to be killed if it exceeds memory limit
     logging:
       options:
