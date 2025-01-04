@@ -6,29 +6,22 @@ import { initModels } from './modelInitializer.js';
 import { predict } from './utils/utils.js';
 import { exampleTracks } from './utils/tracks.js';
 
-// Redis client setup
-const redis = new Redis({
+
+const redisConfig = {
   host: process.env.REDIS_HOST || 'redis',
   port: process.env.REDIS_PORT || 6379,
   password: process.env.REDIS_PASSWORD,
-});
+};
 
-// BullMQ Queue setup
-const inputQueue = new Queue('audio-features', {
-  connection: {
-    host: process.env.REDIS_HOST || 'redis',
-    port: process.env.REDIS_PORT || 6379,
-    password: process.env.REDIS_PASSWORD,
-  },
-});
+const createRedisInstance = () => new Redis(redisConfig);
 
-const outputQueue = new Queue('audio-features-results', {
-  connection: {
-    host: process.env.REDIS_HOST || 'redis',
-    port: process.env.REDIS_PORT || 6379,
-    password: process.env.REDIS_PASSWORD,
-  },
-});
+const createQueue = (name) => new Queue(name, { connection: redisConfig });
+
+const redis = createRedisInstance();
+
+// Initialize BullMQ queues
+const inputQueue = createQueue('audio-features');
+const outputQueue = createQueue('audio-features-results');
 
 let models;
 const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 5;
