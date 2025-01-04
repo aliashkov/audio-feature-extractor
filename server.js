@@ -77,7 +77,6 @@ const bullWorker = new BullWorker(
         }, 5 * 60 * 1000);
 
         worker.on('message', async (message) => {
-          console.log(message.type)
           if (message.type === 'analyze') {
             clearTimeout(timeout);
             const predictions = await predict(message.featuresData, models);
