@@ -81,6 +81,8 @@ const bullWorker = new BullWorker(
             clearTimeout(timeout);
             const predictions = await predict(message.featuresData, models);
 
+            console.log(predictions)
+
             await outputQueue.add('audio-features-results', {
               taskId,
               predictions,

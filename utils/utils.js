@@ -40,19 +40,19 @@ export async function predict(featuresData, models) {
         predictionsData = [predictionsArray];
       }
       
-      let summarizedPredictions = twoValuesAverage(predictionsData);
-      if (modelName === 'mood_relaxed' || modelName === 'mood_sad') {
+      let summarizedPredictions = twoValuesAverage(predictionsData).map(Number);
+      if (modelName === 'relaxed' || modelName === 'sad') {
         summarizedPredictions = summarizedPredictions.map(value => 1 - value);
       }
       
-      predictions[modelName] = summarizedPredictions[0];
+      predictions[modelName] = Number(summarizedPredictions[0]);
     }
     
     return {
       ...predictions,
-      energy: featuresData.energy,
-      loudness: featuresData.loudness,
-      tempo: featuresData.tempo,
+      energy: Number(featuresData.energy),
+      loudness: Number(featuresData.loudness),
+      tempo: Number(featuresData.tempo),
     };
   } catch (error) {
     throw error;
