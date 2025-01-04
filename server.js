@@ -6,9 +6,6 @@ import { initModels } from './modelInitializer.js';
 import { predict } from './utils/utils.js';
 import { exampleTracks } from './utils/tracks.js';
 
-const PORT = 3001; // Optional, if you want to log the port
-const API_KEY = process.env.API_KEY;
-
 // Redis client setup
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'redis',
@@ -46,10 +43,6 @@ async function loadModels() {
   console.log('Models initialized and ready to use.');
 }
 
-function generateTaskId(offlineUrl) {
-  return `task:${offlineUrl}`;
-}
-
 const bullWorker = new BullWorker(
   'audio-features',
   async (job) => {
@@ -60,8 +53,6 @@ const bullWorker = new BullWorker(
     }
 
     const { offlineUrl, trackId } = job.data;
-
-    const taskId = generateTaskId(trackId);
 
     try {
       const worker = new Worker(path.resolve('worker.js'), {
@@ -76,7 +67,7 @@ const bullWorker = new BullWorker(
         const timeout = setTimeout(() => {
           worker.terminate();
           outputQueue.add('failed', {
-            taskId,
+            trackId,
             failedReason: 'Worker timeout after 5 minutes'
           });
           reject(new Error('Worker timeout after 5 minutes'));
@@ -88,8 +79,8 @@ const bullWorker = new BullWorker(
             const predictions = await predict(message.featuresData, models);
 
             await outputQueue.add('completed', {
-              taskId,
-              predictions,
+              trackId,
+              ...predictions,
             });
 
             await worker.terminate();
@@ -111,7 +102,7 @@ const bullWorker = new BullWorker(
             clearTimeout(timeout);
             await worker.terminate();
             await outputQueue.add('failed', {
-              taskId,
+              trackId,
               failedReason: message.error
             });
             reject(new Error(message.error));
@@ -122,7 +113,7 @@ const bullWorker = new BullWorker(
           clearTimeout(timeout);
           await worker.terminate();
           await outputQueue.add('failed', {
-            taskId,
+            trackId,
             failedReason: error.message
           });
           reject(error);
@@ -132,7 +123,7 @@ const bullWorker = new BullWorker(
           clearTimeout(timeout);
           if (code !== 0) {
             await outputQueue.add('failed', {
-              taskId,
+              trackId,
               failedReason: `Worker stopped with exit code ${code}`
             });
             reject(new Error(`Worker stopped with exit code ${code}`));
@@ -143,7 +134,7 @@ const bullWorker = new BullWorker(
     } catch (error) {
       console.error('Processing error:', error);
       await outputQueue.add('failed', {
-        taskId,
+        trackId,
         failedReason: error.message
       });
       throw error;
@@ -159,15 +150,7 @@ const bullWorker = new BullWorker(
   }
 );
 
-const used = process.memoryUsage();
 const intervalId = setInterval(() => {
-  console.log('Memory usage:', {
-    rss: `${Math.round(used.rss / 1024 / 1024)}MB`,
-    heapTotal: `${Math.round(used.heapTotal / 1024 / 1024)}MB`,
-    heapUsed: `${Math.round(used.heapUsed / 1024 / 1024)}MB`,
-    external: `${Math.round(used.external / 1024 / 1024)}MB`,
-  });
-
   // Log progress
   if (startTime) {
     const elapsedTime = Date.now() - startTime;
@@ -184,8 +167,6 @@ async function addJobs(tracks) {
   if (!models) {
     throw new Error('Models are not initialized yet.');
   }
-
-  
 
   // Initialize timing tracking
   startTime = Date.now();
