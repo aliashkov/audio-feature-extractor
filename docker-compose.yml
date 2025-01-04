@@ -7,7 +7,6 @@ services:
       tags:
         - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:${COMMIT_SHA:-latest}
         - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:latest
-    image: registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:${COMMIT_SHA:-latest}
     environment:
       - NODE_ENV=production
       - MAX_CONCURRENT_WORKERS=5
