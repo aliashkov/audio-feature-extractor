@@ -187,7 +187,7 @@ loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-
+/* 
       // Add only the first 5 tracks to the queue
       const initialBatch = exampleTracks.slice(0, 5);
       await addJobs(initialBatch);
@@ -203,7 +203,7 @@ loadModels()
           console.log('Adding remaining jobs...');
           await addJobs(remainingTracks);
         }, 60000); // Add remaining jobs after 60 seconds
-      }
+      } */
     } else {
       console.error('Failed to initialize models. Exiting...');
       process.exit(1);
