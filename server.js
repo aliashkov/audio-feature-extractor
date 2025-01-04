@@ -67,7 +67,8 @@ const bullWorker = new BullWorker(
         }, 5 * 60 * 1000);
 
         worker.on('message', async (message) => {
-          if (message.type === 'features') {
+          console.log(message.type)
+          if (message.type === 'analyze') {
             clearTimeout(timeout);
             const predictions = await predict(message.featuresData, models);
 
@@ -187,7 +188,7 @@ loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-/* 
+
       // Add only the first 5 tracks to the queue
       const initialBatch = exampleTracks.slice(0, 5);
       await addJobs(initialBatch);
@@ -203,7 +204,7 @@ loadModels()
           console.log('Adding remaining jobs...');
           await addJobs(remainingTracks);
         }, 60000); // Add remaining jobs after 60 seconds
-      } */
+      }
     } else {
       console.error('Failed to initialize models. Exiting...');
       process.exit(1);

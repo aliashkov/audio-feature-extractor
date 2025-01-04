@@ -29,7 +29,7 @@ async function run() {
     // console.log(featuresData)
     // Send features back to main thread
     parentPort.postMessage({
-      type: 'features',
+      type: 'analyze',
       featuresData: featuresData
     });
   } catch (error) {
