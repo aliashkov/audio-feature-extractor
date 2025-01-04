@@ -1,7 +1,7 @@
 export const exampleTracks = [
     {
       trackId: '002b7fb1-42f5-4e88-a2cf-7f87b2dff7a9',
-      offlineUrl: 'https://link.storjshare.io/raw/jw3ki7igb4d5vjduy6p2cptg2gaq/tracks/0beb55d5-c37a-4f64-9c51-7c3fbe80d29d/0beb55d5-c37a-4f64-9c51-7c3fbe80d29d.mp3',
+      offlineUrl: null,
     },
     {
       trackId: '002a4760-1136-42f5-b75e-7f32f08969ee',

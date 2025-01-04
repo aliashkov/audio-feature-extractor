@@ -19,7 +19,6 @@ const createQueue = (name) => new Queue(name, { connection: redisConfig });
 
 const redis = createRedisInstance();
 
-console.log(redis)
 
 // Initialize BullMQ queues
 const inputQueue = createQueue('audio-features');
@@ -48,6 +47,15 @@ const bullWorker = new BullWorker(
     }
 
     const { offlineUrl, trackId } = job.data;
+
+        // Check if offlineUrl is null or empty
+    if (!offlineUrl || offlineUrl.trim() === '') {
+      await outputQueue.add('failed', {
+        trackId,
+        failedReason: 'Offline URL is missing or empty'
+      });
+      throw new Error('Offline URL is missing or empty');
+    }
 
     try {
       const worker = new Worker(path.resolve('worker.js'), {
@@ -199,7 +207,7 @@ loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-  /*     console.log(inputQueue)
+
 
       // Add only the first 5 tracks to the queue
       const initialBatch = exampleTracks.slice(0, 5);
@@ -216,7 +224,7 @@ loadModels()
           console.log('Adding remaining jobs...');
           await addJobs(remainingTracks);
         }, 60000); // Add remaining jobs after 60 seconds
-      } */
+      }
     } else {
       console.error('Failed to initialize models. Exiting...');
       process.exit(1);
