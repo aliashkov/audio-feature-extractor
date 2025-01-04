@@ -146,11 +146,11 @@ const bullWorker = new BullWorker(
   {
     concurrency: maxConcurrentWorkers,
     connection: redisConfig,
-    attempts: 3,
+/*     attempts: 3,
     backoff: {
       type: 'exponential',
       delay: 60000 // Initial delay of 1 second
-    },
+    }, */
     defaultJobOptions: {
       removeOnComplete: 5000,
       removeOnFail: 10000
