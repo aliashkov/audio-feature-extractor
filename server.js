@@ -75,6 +75,10 @@ const bullWorker = new BullWorker(
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           worker.terminate();
+          outputQueue.add('failed', {
+            taskId,
+            failedReason: 'Worker timeout after 5 minutes'
+          });
           reject(new Error('Worker timeout after 5 minutes'));
         }, 5 * 60 * 1000);
 
@@ -83,8 +87,8 @@ const bullWorker = new BullWorker(
             clearTimeout(timeout);
             const predictions = await predict(message.featuresData, models);
 
-            await outputQueue.add('audio-features-results', {
-              trackId,
+            await outputQueue.add('completed', {
+              taskId,
               predictions,
             });
 
@@ -106,6 +110,10 @@ const bullWorker = new BullWorker(
           } else {
             clearTimeout(timeout);
             await worker.terminate();
+            await outputQueue.add('failed', {
+              taskId,
+              failedReason: message.error
+            });
             reject(new Error(message.error));
           }
         });
@@ -113,12 +121,20 @@ const bullWorker = new BullWorker(
         worker.on('error', async (error) => {
           clearTimeout(timeout);
           await worker.terminate();
+          await outputQueue.add('failed', {
+            taskId,
+            failedReason: error.message
+          });
           reject(error);
         });
 
         worker.on('exit', async (code) => {
           clearTimeout(timeout);
           if (code !== 0) {
+            await outputQueue.add('failed', {
+              taskId,
+              failedReason: `Worker stopped with exit code ${code}`
+            });
             reject(new Error(`Worker stopped with exit code ${code}`));
           }
           await worker.terminate();
@@ -126,6 +142,10 @@ const bullWorker = new BullWorker(
       });
     } catch (error) {
       console.error('Processing error:', error);
+      await outputQueue.add('failed', {
+        taskId,
+        failedReason: error.message
+      });
       throw error;
     }
   },
