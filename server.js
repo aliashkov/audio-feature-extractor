@@ -19,6 +19,8 @@ const createQueue = (name) => new Queue(name, { connection: redisConfig });
 
 const redis = createRedisInstance();
 
+console.log(redis)
+
 // Initialize BullMQ queues
 const inputQueue = createQueue('audio-features');
 const outputQueue = createQueue('audio-features-results');
@@ -137,6 +139,15 @@ const bullWorker = new BullWorker(
   {
     concurrency: maxConcurrentWorkers,
     connection: redisConfig,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 60000 // Initial delay of 1 second
+    },
+    defaultJobOptions: {
+      removeOnComplete: 5000,
+      removeOnFail: 10000
+    }
   }
 );
 
@@ -188,7 +199,8 @@ loadModels()
   .then(async () => {
     if (models) {
       console.log('Models are ready. Adding the first batch of jobs...');
-/* 
+  /*     console.log(inputQueue)
+
       // Add only the first 5 tracks to the queue
       const initialBatch = exampleTracks.slice(0, 5);
       await addJobs(initialBatch);
