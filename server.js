@@ -1,14 +1,13 @@
-import { Worker } from 'worker_threads';
-import path from 'path';
-import Redis from 'ioredis';
-import { Queue, Worker as BullWorker } from 'bullmq';
-import { initModels } from './modelInitializer.js';
-import { predict } from './utils/utils.js';
-import { exampleTracks } from './utils/tracks.js';
-
+import { Worker } from "worker_threads";
+import path from "path";
+import Redis from "ioredis";
+import { Queue, Worker as BullWorker } from "bullmq";
+import { initModels } from "./modelInitializer.js";
+import { predict } from "./utils/utils.js";
+import { exampleTracks } from "./utils/tracks.js";
 
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'redis',
+  host: process.env.REDIS_HOST || "redis",
   port: process.env.REDIS_PORT || 6379,
   password: process.env.REDIS_PASSWORD,
 };
@@ -19,12 +18,11 @@ const createQueue = (name) => new Queue(name, { connection: redisConfig });
 
 const redis = createRedisInstance();
 
-
 // Initialize BullMQ queues
-const inputQueue = createQueue('audio-features');
-const outputQueue = createQueue('audio-features-results');
+const inputQueue = createQueue("audio-features");
+const outputQueue = createQueue("audio-features-results");
 
-let models;
+let models = null;
 const maxConcurrentWorkers = parseInt(process.env.MAX_CONCURRENT_WORKERS) || 5;
 
 // Add timing tracking
@@ -33,133 +31,157 @@ let completedJobs = 0;
 let totalJobs = 0;
 
 async function loadModels() {
-  models = await initModels();
-  console.log('Models initialized and ready to use.');
+  try {
+    models = await initModels();
+    console.log("Models initialized and ready to use.");
+    return models;
+  } catch (error) {
+    console.error("Error loading models:", error);
+    throw error;
+  }
 }
 
-const bullWorker = new BullWorker(
-  'audio-features',
-  async (job) => {
-    const jobStartTime = Date.now();
+// Create the worker only after models are loaded
+async function initializeBullWorker() {
+  await loadModels(); // Ensure models are loaded first
 
-    if (!models) {
-      throw new Error('Models are not initialized yet.');
-    }
+  return new BullWorker(
+    "audio-features",
+    async (job) => {
+      const jobStartTime = Date.now();
 
-    const { offlineUrl, trackId } = job.data;
-
-        // Check if offlineUrl is null or empty
-    if (!offlineUrl || offlineUrl.trim() === '') {
-      await outputQueue.add('failed', {
-        trackId,
-        failedReason: 'Offline URL is missing or empty'
-      });
-      throw new Error('Offline URL is missing or empty');
-    }
-
-    try {
-      const worker = new Worker(path.resolve('worker.js'), {
-        workerData: { offlineUrl },
-        resourceLimits: {
-          maxOldGenerationSizeMb: 512,
-          maxYoungGenerationSizeMb: 128,
+      if (!models) {
+        await loadModels(); // Try to reload models if they're not available
+        if (!models) {
+          throw new Error("Models are not initialized yet.");
         }
-      });
+      }
 
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          worker.terminate();
-          outputQueue.add('failed', {
-            trackId,
-            failedReason: 'Worker timeout after 5 minutes'
-          });
-          reject(new Error('Worker timeout after 5 minutes'));
-        }, 5 * 60 * 1000);
+      const { offlineUrl, trackId } = job.data;
 
-        worker.on('message', async (message) => {
-          if (message.type === 'analyze') {
-            clearTimeout(timeout);
-            const predictions = await predict(message.featuresData, models);
+      if (!offlineUrl || offlineUrl.trim() === "") {
+        await outputQueue.add("failed", {
+          trackId,
+          failedReason: "Offline URL is missing or empty",
+        });
+        throw new Error("Offline URL is missing or empty");
+      }
 
-            await outputQueue.add('completed', {
+      try {
+        const worker = new Worker(path.resolve("worker.js"), {
+          workerData: { offlineUrl },
+          resourceLimits: {
+            maxOldGenerationSizeMb: 512,
+            maxYoungGenerationSizeMb: 128,
+          },
+        });
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            worker.terminate();
+            outputQueue.add("failed", {
               trackId,
-              ...predictions,
+              failedReason: "Worker timeout after 5 minutes",
             });
+            reject(new Error("Worker timeout after 5 minutes"));
+          }, 5 * 60 * 1000);
 
-            await worker.terminate();
+          worker.on("message", async (message) => {
+            if (message.type === "analyze") {
+              clearTimeout(timeout);
+              const predictions = await predict(message.featuresData, models);
 
-            // Track job completion
-            completedJobs++;
-            const jobDuration = Date.now() - jobStartTime;
-            console.log(`Job ${job.id} completed in ${jobDuration}ms`);
+              await outputQueue.add("completed", {
+                trackId,
+                ...predictions,
+              });
 
-            if (completedJobs === totalJobs) {
-              const totalDuration = Date.now() - startTime;
-              console.log(`\nAll jobs completed!`);
-              console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
-              console.log(`Average time per job: ${(totalDuration / totalJobs).toFixed(2)}ms`);
+              await worker.terminate();
+
+              completedJobs++;
+              const jobDuration = Date.now() - jobStartTime;
+              console.log(`Job ${job.id} completed in ${jobDuration}ms`);
+
+              if (completedJobs === totalJobs) {
+                const totalDuration = Date.now() - startTime;
+                console.log(`\nAll jobs completed!`);
+                console.log(
+                  `Total execution time: ${totalDuration}ms (${(
+                    totalDuration / 1000
+                  ).toFixed(2)} seconds)`
+                );
+                console.log(
+                  `Average time per job: ${(totalDuration / totalJobs).toFixed(
+                    2
+                  )}ms`
+                );
+              }
+
+              resolve(predictions);
+            } else {
+              clearTimeout(timeout);
+              await worker.terminate();
+              await outputQueue.add("failed", {
+                trackId,
+                failedReason: message.error,
+              });
+              reject(new Error(message.error));
             }
+          });
 
-            resolve(predictions);
-          } else {
+          worker.on("error", async (error) => {
             clearTimeout(timeout);
             await worker.terminate();
-            await outputQueue.add('failed', {
+            await outputQueue.add("failed", {
               trackId,
-              failedReason: message.error
+              failedReason: error.message,
             });
-            reject(new Error(message.error));
-          }
-        });
-
-        worker.on('error', async (error) => {
-          clearTimeout(timeout);
-          await worker.terminate();
-          await outputQueue.add('failed', {
-            trackId,
-            failedReason: error.message
+            reject(error);
           });
-          reject(error);
-        });
 
-        worker.on('exit', async (code) => {
-          clearTimeout(timeout);
-          if (code !== 0) {
-            await outputQueue.add('failed', {
-              trackId,
-              failedReason: `Worker stopped with exit code ${code}`
-            });
-            reject(new Error(`Worker stopped with exit code ${code}`));
-          }
-          await worker.terminate();
+          worker.on("exit", async (code) => {
+            clearTimeout(timeout);
+            if (code !== 0) {
+              await outputQueue.add("failed", {
+                trackId,
+                failedReason: `Worker stopped with exit code ${code}`,
+              });
+              reject(new Error(`Worker stopped with exit code ${code}`));
+            }
+            await worker.terminate();
+          });
         });
-      });
-    } catch (error) {
-      console.error('Processing error:', error);
-      await outputQueue.add('failed', {
-        trackId,
-        failedReason: error.message
-      });
-      throw error;
+      } catch (error) {
+        console.error("Processing error:", error);
+        await outputQueue.add("failed", {
+          trackId,
+          failedReason: error.message,
+        });
+        throw error;
+      }
+    },
+    {
+      concurrency: maxConcurrentWorkers,
+      connection: redisConfig,
+      attempts: 3,
+      backoff: {
+        type: "exponential",
+        delay: 60000, // Initial delay of 1 second
+      },
+      defaultJobOptions: {
+        removeOnComplete: 5000,
+        removeOnFail: 10000,
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 60000,
+        },
+      },
     }
-  },
-  {
-    concurrency: maxConcurrentWorkers,
-    connection: redisConfig,
-/*     attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 60000 // Initial delay of 1 second
-    }, */
-    defaultJobOptions: {
-      removeOnComplete: 5000,
-      removeOnFail: 10000
-    }
-  }
-);
+  );
+}
 
 const intervalId = setInterval(() => {
-  // Log progress
   if (startTime) {
     const elapsedTime = Date.now() - startTime;
     console.log(`Progress: ${completedJobs}/${totalJobs} jobs completed`);
@@ -169,84 +191,78 @@ const intervalId = setInterval(() => {
 
 async function addJobs(tracks) {
   if (!Array.isArray(tracks)) {
-    throw new Error('Tracks should be an array');
+    throw new Error("Tracks should be an array");
   }
 
   if (!models) {
-    throw new Error('Models are not initialized yet.');
+    await loadModels();
   }
 
-  // Initialize timing tracking
   startTime = Date.now();
   completedJobs = 0;
   totalJobs = tracks.length;
 
-  console.log(`Starting processing of ${totalJobs} jobs at ${new Date().toISOString()}`);
+  console.log(
+    `Starting processing of ${totalJobs} jobs at ${new Date().toISOString()}`
+  );
 
   const jobs = await Promise.all(
     tracks.map(({ trackId, offlineUrl }) =>
-      
       inputQueue.add(
-        'audio-features',
+        "audio-features",
         { trackId, offlineUrl },
         {
           removeOnComplete: true,
           removeOnFail: true,
+          attempts: 3,
+          backoff: {
+            type: "exponential",
+            delay: 60000,
+          },
         }
       )
     )
   );
 
-  console.log('Jobs added:', jobs.map((job) => job.id));
+  console.log(
+    "Jobs added:",
+    jobs.map((job) => job.id)
+  );
 }
 
+let bullWorker;
 
-
-loadModels()
-  .then(async () => {
-    if (models) {
-      console.log('Models are ready. Adding the first batch of jobs...');
-
-/* 
-      // Add only the first 5 tracks to the queue
-      const initialBatch = exampleTracks.slice(0, 5);
-      await addJobs(initialBatch);
-
-      console.log('First batch of 5 jobs added.');
-
-      // Optional: Add logic to process the remaining tracks later
-      const remainingTracks = exampleTracks.slice(5);
-      if (remainingTracks.length > 0) {
-        console.log(`There are ${remainingTracks.length} remaining tracks to process.`);
-        // Add more jobs as needed, e.g., after some delay
-        setTimeout(async () => {
-          console.log('Adding remaining jobs...');
-          await addJobs(remainingTracks);
-        }, 60000); // Add remaining jobs after 60 seconds
-      } */
-    } else {
-      console.error('Failed to initialize models. Exiting...');
-      process.exit(1);
-    }
-  })
-  .catch((error) => {
-    console.error('Error loading models:', error);
+// Initialize the worker and then start processing
+async function initialize() {
+  try {
+    bullWorker = await initializeBullWorker();
+    console.log("Worker initialized and ready to process jobs");
+  } catch (error) {
+    console.error("Failed to initialize worker:", error);
     process.exit(1);
-  });
+  }
+}
 
+// Start the initialization
+initialize();
 
-process.on('SIGTERM', async () => {
+process.on("SIGTERM", async () => {
   clearInterval(intervalId);
 
-  // Log final statistics if process is terminated
   if (startTime) {
     const totalDuration = Date.now() - startTime;
     console.log(`\nProcess terminated!`);
     console.log(`Completed ${completedJobs}/${totalJobs} jobs`);
-    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
+    console.log(
+      `Total execution time: ${totalDuration}ms (${(
+        totalDuration / 1000
+      ).toFixed(2)} seconds)`
+    );
   }
 
-  await bullWorker.close();
+  if (bullWorker) {
+    await bullWorker.close();
+  }
   await redis.quit();
   process.exit(0);
 });

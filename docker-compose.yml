@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   tensorflow-server:
@@ -7,6 +7,7 @@ services:
       tags:
         - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:${COMMIT_SHA:-latest}
         - registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:latest
+    image: registry.gitlab.com/gena.bondarev/token_back/tensorflow-server:latest
     environment:
       - NODE_ENV=production
       - MAX_CONCURRENT_WORKERS=5
@@ -20,11 +21,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3G    # Maximum memory limit
+          memory: 3G # Maximum memory limit
         reservations:
-          memory: 2G    # Minimum memory reservation
-    oom_kill_disable: false  # Allow container to be killed if it exceeds memory limit
+          memory: 2G # Minimum memory reservation
+    oom_kill_disable: false # Allow container to be killed if it exceeds memory limit
     logging:
       options:
-        max-size: "10m"   # Maximum log file size
-        max-file: "3"     # Number of log files to keep
+        max-size: "10m" # Maximum log file size
+        max-file: "3" # Number of log files to keep
