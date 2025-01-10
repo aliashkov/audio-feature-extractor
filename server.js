@@ -10,11 +10,42 @@ const redisConfig = {
   host: process.env.REDIS_HOST || "redis",
   port: process.env.REDIS_PORT || 6379,
   password: process.env.REDIS_PASSWORD,
+  maxRetriesPerRequest: 3,
+  enableReadyCheck: true,
+  retryStrategy: (times) => {
+    const delay = Math.min(times * 50, 2000);
+    return delay;
+  }
 };
 
-const createRedisInstance = () => new Redis(redisConfig);
+let isShuttingDown = false;
 
-const createQueue = (name) => new Queue(name, { connection: redisConfig });
+const createRedisInstance = () => {
+  const redis = new Redis(redisConfig);
+  
+  redis.on('error', (error) => {
+    console.error('Redis connection error:', error);
+  });
+
+  redis.on('connect', () => {
+    console.log('Successfully connected to Redis');
+  });
+
+  return redis;
+};
+
+const createQueue = (name) => new Queue(name, { 
+  connection: redisConfig,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: true,
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 60000,
+    }
+  }
+});
 
 const redis = createRedisInstance();
 
@@ -60,42 +91,27 @@ async function cleanupDuplicateJobs() {
 async function initializeBullWorker() {
   await loadModels(); // Ensure models are loaded first
 
-  return new BullWorker(
+  const worker = new BullWorker(
     "audio-features",
     async (job) => {
-      // Check if result already exists in output queue
-      const completed = await outputQueue.getJobs(['completed']);
-      const alreadyCompleted = completed.some(
-        completedJob => completedJob.data.trackId === job.data.trackId
-      );
-      
-      if (alreadyCompleted) {
-        console.log(`Job ${job.data.trackId} already has results, skipping`);
-        return;
+      if (isShuttingDown) {
+        throw new Error('Worker is shutting down');
       }
-
+  
       const jobId = `processed:${job.data.trackId}`;
-      
-      // Check if job was already processed
-      const wasProcessed = await redis.get(jobId);
-      if (wasProcessed) {
-        console.log(`Job ${job.data.trackId} was already processed, skipping`);
-        return;
-      }
-
       const jobStartTime = Date.now();
-
+  
       if (!models) {
-        await loadModels(); // Try to reload models if they're not available
+        await loadModels();
         if (!models) {
           throw new Error("Models are not initialized yet.");
         }
       }
-
+  
       const { offlineUrl, trackId } = job.data;
       console.log(offlineUrl)
       console.log(trackId)
-
+  
       if (!offlineUrl || offlineUrl.trim() === "") {
         await outputQueue.add("failed", {
           trackId,
@@ -217,6 +233,8 @@ async function initializeBullWorker() {
     {
       concurrency: maxConcurrentWorkers,
       connection: redisConfig,
+      lockDuration: 90000, // 90 seconds
+      lockRenewTime: 30000, // 30 seconds
       attempts: 3,
       backoff: {
         type: "exponential",
@@ -233,10 +251,20 @@ async function initializeBullWorker() {
       },
     }
   );
+
+  worker.on('error', (error) => {
+    console.error('Worker error:', error);
+  });
+
+  worker.on('failed', (job, error) => {
+    console.error(`Job ${job.id} failed:`, error);
+  });
+
+  return worker;
 }
 
 const intervalId = setInterval(() => {
-  if (startTime) {
+  if (startTime && !isShuttingDown) {
     const elapsedTime = Date.now() - startTime;
     console.log(`Progress: ${completedJobs}/${totalJobs} jobs completed`);
     console.log(`Time elapsed: ${(elapsedTime / 1000).toFixed(2)} seconds`);
@@ -262,6 +290,9 @@ initialize();
 
 // Function to add jobs to the queue
 export async function addJob(data) {
+  if (isShuttingDown) {
+    throw new Error('Service is shutting down');
+  }
   return await inputQueue.add('process-audio', data, {
     jobId: data.trackId,
     removeOnComplete: true,
@@ -269,7 +300,8 @@ export async function addJob(data) {
   });
 }
 
-process.on("SIGTERM", async () => {
+async function gracefulShutdown() {
+  isShuttingDown = true;
   clearInterval(intervalId);
 
   if (startTime) {
@@ -283,9 +315,27 @@ process.on("SIGTERM", async () => {
     );
   }
 
-  if (bullWorker) {
-    await bullWorker.close();
+  try {
+    if (bullWorker) {
+      console.log('Closing worker...');
+      await bullWorker.close(true); // Wait for ongoing jobs
+    }
+    
+    console.log('Closing Redis connection...');
+    await redis.quit();
+    
+    console.log('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
   }
-  await redis.quit();
-  process.exit(0);
+}
+
+// Handle different termination signals
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
+process.on("uncaughtException", (error) => {
+  console.error('Uncaught Exception:', error);
+  gracefulShutdown();
 });
