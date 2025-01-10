@@ -41,6 +41,21 @@ async function loadModels() {
   }
 }
 
+async function cleanupDuplicateJobs() {
+  const jobs = await inputQueue.getJobs(['active', 'waiting', 'delayed']);
+  const seenTrackIds = new Set();
+  
+  for (const job of jobs) {
+    const trackId = job.data.trackId;
+    if (seenTrackIds.has(trackId)) {
+      console.log(`Removing duplicate job for trackId: ${trackId}`);
+      await job.remove();
+    } else {
+      seenTrackIds.add(trackId);
+    }
+  }
+}
+
 // Create the worker only after models are loaded
 async function initializeBullWorker() {
   await loadModels(); // Ensure models are loaded first
@@ -48,6 +63,26 @@ async function initializeBullWorker() {
   return new BullWorker(
     "audio-features",
     async (job) => {
+      // Check if result already exists in output queue
+      const completed = await outputQueue.getJobs(['completed']);
+      const alreadyCompleted = completed.some(
+        completedJob => completedJob.data.trackId === job.data.trackId
+      );
+      
+      if (alreadyCompleted) {
+        console.log(`Job ${job.data.trackId} already has results, skipping`);
+        return;
+      }
+
+      const jobId = `processed:${job.data.trackId}`;
+      
+      // Check if job was already processed
+      const wasProcessed = await redis.get(jobId);
+      if (wasProcessed) {
+        console.log(`Job ${job.data.trackId} was already processed, skipping`);
+        return;
+      }
+
       const jobStartTime = Date.now();
 
       if (!models) {
@@ -65,6 +100,8 @@ async function initializeBullWorker() {
         await outputQueue.add("failed", {
           trackId,
           failedReason: "Offline URL is missing or empty",
+        }, {
+          jobId: `failed:${trackId}`
         });
         throw new Error("Offline URL is missing or empty");
       }
@@ -84,6 +121,8 @@ async function initializeBullWorker() {
             outputQueue.add("failed", {
               trackId,
               failedReason: "Worker timeout after 5 minutes",
+            }, {
+              jobId: `failed:${trackId}`
             });
             reject(new Error("Worker timeout after 5 minutes"));
           }, 5 * 60 * 1000);
@@ -96,7 +135,12 @@ async function initializeBullWorker() {
               await outputQueue.add("completed", {
                 trackId,
                 ...predictions,
+              }, {
+                jobId: `completed:${trackId}`
               });
+
+              // Mark job as processed with 24h expiry
+              await redis.set(jobId, '1', 'EX', 86400);
 
               await worker.terminate();
 
@@ -126,6 +170,8 @@ async function initializeBullWorker() {
               await outputQueue.add("failed", {
                 trackId,
                 failedReason: message.error,
+              }, {
+                jobId: `failed:${trackId}`
               });
               reject(new Error(message.error));
             }
@@ -137,6 +183,8 @@ async function initializeBullWorker() {
             await outputQueue.add("failed", {
               trackId,
               failedReason: error.message,
+            }, {
+              jobId: `failed:${trackId}`
             });
             reject(error);
           });
@@ -147,6 +195,8 @@ async function initializeBullWorker() {
               await outputQueue.add("failed", {
                 trackId,
                 failedReason: `Worker stopped with exit code ${code}`,
+              }, {
+                jobId: `failed:${trackId}`
               });
               reject(new Error(`Worker stopped with exit code ${code}`));
             }
@@ -158,6 +208,8 @@ async function initializeBullWorker() {
         await outputQueue.add("failed", {
           trackId,
           failedReason: error.message,
+        }, {
+          jobId: `failed:${trackId}`
         });
         throw error;
       }
@@ -168,11 +220,11 @@ async function initializeBullWorker() {
       attempts: 3,
       backoff: {
         type: "exponential",
-        delay: 60000, // Initial delay of 1 second
+        delay: 60000,
       },
       defaultJobOptions: {
-        removeOnComplete: 5000,
-        removeOnFail: 10000,
+        removeOnComplete: true,
+        removeOnFail: true,
         attempts: 3,
         backoff: {
           type: "exponential",
@@ -191,52 +243,12 @@ const intervalId = setInterval(() => {
   }
 }, 30000);
 
-async function addJobs(tracks) {
-  if (!Array.isArray(tracks)) {
-    throw new Error("Tracks should be an array");
-  }
-
-  if (!models) {
-    await loadModels();
-  }
-
-  startTime = Date.now();
-  completedJobs = 0;
-  totalJobs = tracks.length;
-
-  console.log(
-    `Starting processing of ${totalJobs} jobs at ${new Date().toISOString()}`
-  );
-
-  const jobs = await Promise.all(
-    tracks.map(({ trackId, offlineUrl }) =>
-      inputQueue.add(
-        "audio-features",
-        { trackId, offlineUrl },
-        {
-          removeOnComplete: true,
-          removeOnFail: true,
-          attempts: 3,
-          backoff: {
-            type: "exponential",
-            delay: 60000,
-          },
-        }
-      )
-    )
-  );
-
-  console.log(
-    "Jobs added:",
-    jobs.map((job) => job.id)
-  );
-}
-
 let bullWorker;
 
 // Initialize the worker and then start processing
 async function initialize() {
   try {
+    await cleanupDuplicateJobs();
     bullWorker = await initializeBullWorker();
     console.log("Worker initialized and ready to process jobs");
   } catch (error) {
@@ -247,6 +259,15 @@ async function initialize() {
 
 // Start the initialization
 initialize();
+
+// Function to add jobs to the queue
+export async function addJob(data) {
+  return await inputQueue.add('process-audio', data, {
+    jobId: data.trackId,
+    removeOnComplete: true,
+    removeOnFail: true
+  });
+}
 
 process.on("SIGTERM", async () => {
   clearInterval(intervalId);
