@@ -11,7 +11,7 @@ services:
     environment:
       - NODE_ENV=production
       - MAX_CONCURRENT_WORKERS=5
-      - REDIS_HOST=redis
+      - REDIS_HOST=host.docker.internal
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     restart: unless-stopped

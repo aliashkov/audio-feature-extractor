@@ -6,9 +6,30 @@ import fetch from 'node-fetch';
 const essentia = new Essentia(EssentiaWASM);
 const extractor = new EssentiaModel.EssentiaTFInputExtractor(EssentiaWASM, 'musicnn', false);
 
+// Define maximum buffer size (10MB = 10 * 1024 * 1024 bytes)
+const MAX_BUFFER_SIZE = 10 * 1024 * 1024;
+
 async function computeFeatures(offlineUrl) {
-  const response = await fetch(offlineUrl);
+  const response = await fetch(offlineUrl, {
+    headers: {
+      'Range': 'bytes=0-10485759' // Request the first 10MB (10 * 1024 * 1024 bytes)
+    }
+  });
+  
+  // Get content length from headers
+  const contentLength = parseInt(response.headers.get('content-length'));
+  
+  if (contentLength && contentLength > MAX_BUFFER_SIZE) {
+    throw new Error(`File size exceeds maximum limit of 10MB (actual size: ${(contentLength / (1024 * 1024)).toFixed(2)}MB)`);
+  }
+  
   const buffer = await response.arrayBuffer();
+  
+  // Double-check actual buffer size
+  if (buffer.byteLength > MAX_BUFFER_SIZE) {
+    throw new Error(`File size exceeds maximum limit of 10MB (actual size: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)}MB)`);
+  }
+
   const audio = await decode(buffer);
   const data = essentia.arrayToVector(audio._channelData[0]);
 
@@ -26,7 +47,6 @@ async function run() {
     // Only compute features in the worker
     const featuresData = await computeFeatures(workerData.offlineUrl);
 
-    // console.log(featuresData)
     // Send features back to main thread
     parentPort.postMessage({
       type: 'analyze',
@@ -36,7 +56,7 @@ async function run() {
     console.error('Error in worker:', error);
     parentPort.postMessage({
       type: 'error',
-      error: 'Error processing audio'
+      error: error.message || 'Error processing audio'
     });
   }
 }

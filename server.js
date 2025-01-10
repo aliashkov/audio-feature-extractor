@@ -58,6 +58,8 @@ async function initializeBullWorker() {
       }
 
       const { offlineUrl, trackId } = job.data;
+      console.log(offlineUrl)
+      console.log(trackId)
 
       if (!offlineUrl || offlineUrl.trim() === "") {
         await outputQueue.add("failed", {
