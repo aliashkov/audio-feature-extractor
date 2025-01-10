@@ -109,8 +109,7 @@ async function initializeBullWorker() {
       }
   
       const { offlineUrl, trackId } = job.data;
-      console.log(offlineUrl)
-      console.log(trackId)
+      console.log(`Processing job for trackId: ${trackId}, offlineUrl: ${offlineUrl}`);
   
       if (!offlineUrl || offlineUrl.trim() === "") {
         await outputQueue.add("failed", {
@@ -141,13 +140,12 @@ async function initializeBullWorker() {
               jobId: `failed:${trackId}`
             });
             reject(new Error("Worker timeout after 5 minutes"));
-          }, 5 * 60 * 1000);
+          }, 5 * 60 * 1000); // 5 minutes
 
           worker.on("message", async (message) => {
+            clearTimeout(timeout);
             if (message.type === "analyze") {
-              clearTimeout(timeout);
               const predictions = await predict(message.featuresData, models);
-
               await outputQueue.add("completed", {
                 trackId,
                 ...predictions,
@@ -155,10 +153,7 @@ async function initializeBullWorker() {
                 jobId: `completed:${trackId}`
               });
 
-              // Mark job as processed with 24h expiry
-              await redis.set(jobId, '1', 'EX', 86400);
-
-              await worker.terminate();
+              await redis.set(jobId, '1', 'EX', 86400); // 24 hours expiry
 
               completedJobs++;
               const jobDuration = Date.now() - jobStartTime;
@@ -166,57 +161,28 @@ async function initializeBullWorker() {
 
               if (completedJobs === totalJobs) {
                 const totalDuration = Date.now() - startTime;
-                console.log(`\nAll jobs completed!`);
-                console.log(
-                  `Total execution time: ${totalDuration}ms (${(
-                    totalDuration / 1000
-                  ).toFixed(2)} seconds)`
-                );
-                console.log(
-                  `Average time per job: ${(totalDuration / totalJobs).toFixed(
-                    2
-                  )}ms`
-                );
+                console.log(`\nAll jobs completed! Total execution time: ${totalDuration}ms`);
+                console.log(`Average time per job: ${(totalDuration / totalJobs).toFixed(2)}ms`);
               }
 
               resolve(predictions);
             } else {
-              clearTimeout(timeout);
-              await worker.terminate();
-              await outputQueue.add("failed", {
-                trackId,
-                failedReason: message.error,
-              }, {
-                jobId: `failed:${trackId}`
-              });
+              await handleWorkerError(message.error, trackId);
               reject(new Error(message.error));
             }
           });
 
           worker.on("error", async (error) => {
-            clearTimeout(timeout);
-            await worker.terminate();
-            await outputQueue.add("failed", {
-              trackId,
-              failedReason: error.message,
-            }, {
-              jobId: `failed:${trackId}`
-            });
+            await handleWorkerError(error.message, trackId);
             reject(error);
           });
 
           worker.on("exit", async (code) => {
             clearTimeout(timeout);
             if (code !== 0) {
-              await outputQueue.add("failed", {
-                trackId,
-                failedReason: `Worker stopped with exit code ${code}`,
-              }, {
-                jobId: `failed:${trackId}`
-              });
+              await handleWorkerError(`Worker stopped with exit code ${code}`, trackId);
               reject(new Error(`Worker stopped with exit code ${code}`));
             }
-            await worker.terminate();
           });
         });
       } catch (error) {
@@ -233,21 +199,12 @@ async function initializeBullWorker() {
     {
       concurrency: maxConcurrentWorkers,
       connection: redisConfig,
-      lockDuration: 90000, // 90 seconds
+      lockDuration: 300000, // Increased lock duration to 5 minutes
       lockRenewTime: 30000, // 30 seconds
       attempts: 3,
       backoff: {
         type: "exponential",
         delay: 60000,
-      },
-      defaultJobOptions: {
-        removeOnComplete: true,
-        removeOnFail: true,
-        attempts: 3,
-        backoff: {
-          type: "exponential",
-          delay: 60000,
-        },
       },
     }
   );
@@ -261,6 +218,17 @@ async function initializeBullWorker() {
   });
 
   return worker;
+}
+
+// Handle worker errors by logging and adding to the failed queue
+async function handleWorkerError(errorMessage, trackId) {
+  console.error(`Worker error: ${errorMessage}`);
+  await outputQueue.add("failed", {
+    trackId,
+    failedReason: errorMessage,
+  }, {
+    jobId: `failed:${trackId}`
+  });
 }
 
 const intervalId = setInterval(() => {
@@ -308,11 +276,7 @@ async function gracefulShutdown() {
     const totalDuration = Date.now() - startTime;
     console.log(`\nProcess terminated!`);
     console.log(`Completed ${completedJobs}/${totalJobs} jobs`);
-    console.log(
-      `Total execution time: ${totalDuration}ms (${(
-        totalDuration / 1000
-      ).toFixed(2)} seconds)`
-    );
+    console.log(`Total execution time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)} seconds)`);
   }
 
   try {
